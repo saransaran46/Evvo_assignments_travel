@@ -28,20 +28,27 @@ class RegisterUserView(APIView):
         user = User.objects.create_user(username=username, email=email, password=password)
         return Response({'message': 'User registered successfully'}, status=status.HTTP_201_CREATED)
 
-# User Login API
+
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        username = request.data.get('username')
+        identifier = request.data.get('username')
         password = request.data.get('password')
 
-        if not username or not password:
-            return Response({'error': 'Both username and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not identifier or not password:
+            return Response({'error': 'Both username (or email) and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+        user = User.objects.filter(email=identifier).first()
+        if user:
+            username = user.username
+        else:
+            username = identifier
 
         user = authenticate(username=username, password=password)
         if user is None:
-            return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'error': 'Invalid Username or Password'}, status=status.HTTP_401_UNAUTHORIZED)
 
         login(request, user)
         refresh = RefreshToken.for_user(user)
@@ -53,26 +60,34 @@ class LoginView(APIView):
                 'id': user.id,
                 'username': user.username,
                 'email': user.email,
-                'is_admin': user.is_admin
+                'is_admin': getattr(user, 'is_admin', False)
             }
         }, status=status.HTTP_200_OK)
 
-# User Logout API
+
+
 class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
+        refresh_token = request.data.get("refresh")
+
+        if not refresh_token:
+            return Response({"error": "Refresh token is required"}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            refresh_token = request.data.get("refresh")
             token = RefreshToken(refresh_token)
-            token.blacklist()
+            token.blacklist()  # Blacklist the refresh token to prevent reuse
             return Response({"message": "Logged out successfully"}, status=status.HTTP_200_OK)
+
+        except TokenError:
+            return Response({"error": "Invalid or expired refresh token"}, status=status.HTTP_400_BAD_REQUEST)
+
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
-# Travel Request API (User)
 class TravelRequestListCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -83,7 +98,7 @@ class TravelRequestListCreateView(APIView):
     def post(self, request):
         data = request.data
 
-        # Extract required fields
+        
         project_name = data.get('project_name')
         purpose_travel = data.get('purpose_travel')
         travel_start_date = data.get('travel_start_date')
@@ -98,11 +113,11 @@ class TravelRequestListCreateView(APIView):
 
         # Validate date format
         try:
-            travel_start_date = datetime.strptime(travel_start_date, '%Y-%m-%d').date()
+            travel_start_date = datetime.strptime(travel_start_date, '%d-%m-%Y').date()
         except ValueError:
-            return Response({'error': 'Invalid date format. Use YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Invalid date format. Use DD-MM-YYYY'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create and save the travel request
+        
         travel_request = TravelRequest.objects.create(
             user=request.user,
             project_name=project_name,
@@ -114,7 +129,20 @@ class TravelRequestListCreateView(APIView):
             travel_end_loc=travel_end_loc
         )
 
-        return Response({'message': 'Travel request submitted successfully', 'id': travel_request.id}, status=status.HTTP_201_CREATED)
+
+        travel_request_data = {
+            'id': travel_request.id,
+            'user': travel_request.user.id,
+            'project_name': travel_request.project_name,
+            'purpose_travel': travel_request.purpose_travel,
+            'travel_start_date': travel_request.travel_start_date.strftime('%d-%m-%Y'),
+            'travel_mode': travel_request.travel_mode,
+            'ticket_booking_mode': travel_request.ticket_booking_mode,
+            'travel_start_loc': travel_request.travel_start_loc,
+            'travel_end_loc': travel_request.travel_end_loc
+        }
+
+        return Response({'message': 'Travel request submitted successfully', 'travel_response_message': travel_request_data}, status=status.HTTP_201_CREATED)
 
 
 
@@ -165,7 +193,7 @@ class AdminApproveRejectView(APIView):
     API for Admin to approve or reject a travel request.
     Only Admin users can perform this action.
     """
-    permission_classes = [permissions.IsAdminUser]  # Only admins can approve/reject
+    permission_classes = [permissions.IsAdminUser]
 
     def patch(self, request, pk):
         """
@@ -177,27 +205,21 @@ class AdminApproveRejectView(APIView):
         }
         """
 
-        # Fetch the travel request instance
         travel_request = get_object_or_404(TravelRequest, pk=pk)
-
-        # Extract new status from request data
+        
         new_status = request.data.get('status')
 
-        # Check if the status is valid
         if new_status not in ['approved', 'rejected']:
             return Response({'error': 'Invalid status. Choose either "approved" or "rejected".'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if the request is already in the same status
         if travel_request.status == new_status:
             return Response({'message': f'Travel request is already {new_status}.'},
                             status=status.HTTP_200_OK)
 
-        # Update the status
         travel_request.status = new_status
         travel_request.save()
 
-        # Log action (In a real-world app, this can be stored in an audit table)
         print(f"Admin {request.user.username} has {new_status} travel request ID {pk}")
 
         # Notify user (In a real-world app, this can trigger an email or push notification)
