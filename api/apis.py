@@ -97,7 +97,6 @@ class TravelRequestListCreateView(APIView):
 
     def post(self, request):
         data = request.data
-
         
         project_name = data.get('project_name')
         purpose_travel = data.get('purpose_travel')
@@ -109,13 +108,13 @@ class TravelRequestListCreateView(APIView):
 
         # Validate required fields
         if not all([project_name, purpose_travel, travel_start_date, travel_mode, ticket_booking_mode, travel_start_loc, travel_end_loc]):
-            return Response({'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'success': False,'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate date format
         try:
             travel_start_date = datetime.strptime(travel_start_date, '%d-%m-%Y').date()
         except ValueError:
-            return Response({'error': 'Invalid date format. Use DD-MM-YYYY'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'success': False,'error': 'Invalid date format. Use DD-MM-YYYY'}, status=status.HTTP_400_BAD_REQUEST)
 
         
         travel_request = TravelRequest.objects.create(
@@ -142,7 +141,12 @@ class TravelRequestListCreateView(APIView):
             'travel_end_loc': travel_request.travel_end_loc
         }
 
-        return Response({'message': 'Travel request submitted successfully', 'travel_response_message': travel_request_data}, status=status.HTTP_201_CREATED)
+        success_message = {
+            'message': 'Travel request submitted successfully!',
+            'success': True,
+            'travel_request_details': travel_request_data
+        }
+        return Response(success_message, status=status.HTTP_201_CREATED)
 
 
 
@@ -159,6 +163,7 @@ class AdminTravelRequestListView(APIView):
 
     def get(self, request):
         travel_requests = TravelRequest.objects.all().values()
+        print(travel_requests,'/.')
         return Response(travel_requests, status=status.HTTP_200_OK)
 
 
@@ -187,7 +192,50 @@ class AdminTravelRequestDetailView(APIView):
         return Response(data, status=status.HTTP_200_OK)
 
 
-# 3️⃣ API: Approve/Reject Travel Request (Admin)
+# # 3️⃣ API: Approve/Reject Travel Request (Admin)
+# class AdminApproveRejectView(APIView):
+#     """
+#     API for Admin to approve or reject a travel request.
+#     Only Admin users can perform this action.
+#     """
+#     permission_classes = [permissions.IsAdminUser]
+
+#     def patch(self, request, pk):
+#         """
+#         Update the status of a travel request.
+
+#         Expected Payload:
+#         {
+#             "status": "approved" or "rejected"
+#         }
+#         """
+
+#         travel_request = get_object_or_404(TravelRequest, pk=pk)
+        
+#         new_status = request.data.get('status')
+
+#         if new_status not in ['approved', 'rejected']:
+#             return Response({'error': 'Invalid status. Choose either "approved" or "rejected".'},
+#                             status=status.HTTP_400_BAD_REQUEST)
+
+#         if travel_request.status == new_status:
+#             return Response({'message': f'Travel request is already {new_status}.'},
+#                             status=status.HTTP_200_OK)
+
+#         travel_request.status = new_status
+#         travel_request.save()
+
+#         print(f"Admin {request.user.username} has {new_status} travel request ID {pk}")
+
+#         # Notify user (In a real-world app, this can trigger an email or push notification)
+#         # Example: send_email_notification(travel_request.user.email, new_status)
+
+#         return Response({'message': f'Travel request has been {new_status} successfully.'},
+#                         status=status.HTTP_200_OK)
+
+
+
+
 class AdminApproveRejectView(APIView):
     """
     API for Admin to approve or reject a travel request.
@@ -206,25 +254,34 @@ class AdminApproveRejectView(APIView):
         """
 
         travel_request = get_object_or_404(TravelRequest, pk=pk)
-        
-        new_status = request.data.get('status')
 
-        if new_status not in ['approved', 'rejected']:
-            return Response({'error': 'Invalid status. Choose either "approved" or "rejected".'},
-                            status=status.HTTP_400_BAD_REQUEST)
+        # Default status to 'pending' if no status is set
+        if not travel_request.status:
+            travel_request.status = "pending"
+            travel_request.save()
+
+        new_status = request.data.get("status")
+
+        if new_status not in ["approved", "rejected"]:
+            return Response(
+                {"error": 'Invalid status. Choose either "approved" or "rejected".'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if travel_request.status == new_status:
-            return Response({'message': f'Travel request is already {new_status}.'},
-                            status=status.HTTP_200_OK)
+            return Response(
+                {"message": f"Travel request is already {new_status}."},
+                status=status.HTTP_200_OK,
+            )
 
+        # Update status
         travel_request.status = new_status
         travel_request.save()
 
         print(f"Admin {request.user.username} has {new_status} travel request ID {pk}")
 
-        # Notify user (In a real-world app, this can trigger an email or push notification)
-        # Example: send_email_notification(travel_request.user.email, new_status)
-
-        return Response({'message': f'Travel request has been {new_status} successfully.'},
-                        status=status.HTTP_200_OK)
+        return Response(
+            {"message": f"Travel request has been {new_status} successfully."},
+            status=status.HTTP_200_OK,
+        )
 
