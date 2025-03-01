@@ -22,8 +22,14 @@ class RegisterUserView(APIView):
         if not username or not email or not password:
             return Response({'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
 
+        if User.objects.filter(username=username).exists() and User.objects.filter(email=email).exists():
+            return Response({'error': 'Username and Email already Exists, Proceed to signin'}, status=status.HTTP_400_BAD_REQUEST)
+
         if User.objects.filter(username=username).exists():
             return Response({'error': 'Username already taken'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(email=email).exists():
+            return Response({'error': 'Email already Exists, Proceed to signin'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = User.objects.create_user(username=username, email=email, password=password)
         return Response({'message': 'User registered successfully'}, status=status.HTTP_201_CREATED)
