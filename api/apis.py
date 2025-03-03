@@ -159,21 +159,32 @@ class TravelRequestListCreateView(APIView):
 
 
 
-# 1️⃣ API: List All Travel Requests (Admin)
+
 class AdminTravelRequestListView(APIView):
     """
     API to display all created travel requests in a table format.
     Only Admins can access this.
     """
-    permission_classes = [permissions.IsAdminUser]  # Only admin users can access
+    permission_classes = [permissions.IsAdminUser]
 
     def get(self, request):
         travel_requests = TravelRequest.objects.all().values()
         print(travel_requests,'/.')
-        return Response(travel_requests, status=status.HTTP_200_OK)
+        travel_requests_list = []
+        for travel_request in travel_requests:
+            user_id = travel_request.get('user_id')
+            user_name = None
+            if user_id:
+                user = User.objects.filter(id=user_id).first()
+                if user:
+                    user_name = user.username
+            
+            travel_request['username'] = user_name
+            travel_requests_list.append(travel_request)
+        return Response(travel_requests_list, status=status.HTTP_200_OK)
 
 
-# 2️⃣ API: Get Travel Request Details (Admin)
+
 class AdminTravelRequestDetailView(APIView):
     """
     API to view details of a specific travel request.
@@ -198,48 +209,6 @@ class AdminTravelRequestDetailView(APIView):
         return Response(data, status=status.HTTP_200_OK)
 
 
-# # 3️⃣ API: Approve/Reject Travel Request (Admin)
-# class AdminApproveRejectView(APIView):
-#     """
-#     API for Admin to approve or reject a travel request.
-#     Only Admin users can perform this action.
-#     """
-#     permission_classes = [permissions.IsAdminUser]
-
-#     def patch(self, request, pk):
-#         """
-#         Update the status of a travel request.
-
-#         Expected Payload:
-#         {
-#             "status": "approved" or "rejected"
-#         }
-#         """
-
-#         travel_request = get_object_or_404(TravelRequest, pk=pk)
-        
-#         new_status = request.data.get('status')
-
-#         if new_status not in ['approved', 'rejected']:
-#             return Response({'error': 'Invalid status. Choose either "approved" or "rejected".'},
-#                             status=status.HTTP_400_BAD_REQUEST)
-
-#         if travel_request.status == new_status:
-#             return Response({'message': f'Travel request is already {new_status}.'},
-#                             status=status.HTTP_200_OK)
-
-#         travel_request.status = new_status
-#         travel_request.save()
-
-#         print(f"Admin {request.user.username} has {new_status} travel request ID {pk}")
-
-#         # Notify user (In a real-world app, this can trigger an email or push notification)
-#         # Example: send_email_notification(travel_request.user.email, new_status)
-
-#         return Response({'message': f'Travel request has been {new_status} successfully.'},
-#                         status=status.HTTP_200_OK)
-
-
 
 
 class AdminApproveRejectView(APIView):
@@ -261,7 +230,7 @@ class AdminApproveRejectView(APIView):
 
         travel_request = get_object_or_404(TravelRequest, pk=pk)
 
-        # Default status to 'pending' if no status is set
+        
         if not travel_request.status:
             travel_request.status = "pending"
             travel_request.save()
@@ -280,7 +249,7 @@ class AdminApproveRejectView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        # Update status
+        
         travel_request.status = new_status
         travel_request.save()
 
